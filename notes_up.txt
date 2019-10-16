@@ -1,0 +1,5 @@
+
+some simple notes
+to be uploaded
+to Google Cloud Storage
+by this golang-app
