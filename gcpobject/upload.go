@@ -18,12 +18,12 @@ func Upload(ctx context.Context, client *storage.Client, bucketName, objectName 
 		return copyErr
 	}
 	// PLEASE NOTE: in the google documentation is written to wait for the ObjectWriter closing instaed of defering it.
-	// defer objWriter.Close()
-	closeErr := writer.Close()
-	if closeErr != nil {
-		fmt.Printf("Failed to close object %v writer to bucket %v: %v\n", objectName, bucketName, closeErr.Error())
-		return closeErr
-	}
+	defer writer.Close()
+	// closeErr := writer.Close()
+	// if closeErr != nil {
+	// 	fmt.Printf("Failed to close object %v writer to bucket %v: %v\n", objectName, bucketName, closeErr.Error())
+	// 	return closeErr
+	// }
 
 	return nil
 }

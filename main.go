@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/bygui86/go-google-cloud-storage/gcpbucket"
 	"github.com/bygui86/go-google-cloud-storage/gcpclient"
 	"github.com/bygui86/go-google-cloud-storage/gcpobject"
+	"github.com/pkg/profile"
 )
 
 const (
@@ -32,6 +35,17 @@ const (
 
 func main() {
 
+	// PROFILING
+	// defer profile.Start(profile.CPUProfile, profile.ProfilePath(".")).Stop()
+	// defer profile.Start(profile.MemProfile, profile.ProfilePath(".")).Stop()
+	memProf := profile.Start(profile.MemProfile, profile.ProfilePath("."))
+	// defer profile.Start(profile.ThreadcreationProfile, profile.ProfilePath(".")).Stop()
+	// defer profile.Start(profile.TraceProfile, profile.ProfilePath(".")).Stop()
+	// defer profile.Start(profile.NoShutdownHook, profile.ProfilePath(".")).Stop()
+	// defer profile.Start(profile.MutexProfile, profile.ProfilePath(".")).Stop()
+	// defer profile.Start(profile.BlockProfile, profile.ProfilePath(".")).Stop()
+	// defer profile.Start(profile.BlockProfile, profile.ProfilePath(".")).Stop()
+
 	// setup context
 	fmt.Printf("*** setup context\n")
 	ctx := context.Background()
@@ -45,8 +59,16 @@ func main() {
 		defer client.Close()
 
 		bucketActions(ctx, client)
-		objectActions(ctx, client)
+		// objectActions(ctx, client)
+
+		go objectBench(ctx, client, "1")
+		go objectBench(ctx, client, "2")
+		go objectBench(ctx, client, "3")
 	}
+
+	time.Sleep(60 * time.Second)
+
+	memProf.Stop()
 }
 
 func bucketActions(ctx context.Context, client *storage.Client) {
@@ -69,6 +91,21 @@ func bucketActions(ctx context.Context, client *storage.Client) {
 		// describe a bucket
 		fmt.Printf("*** describe bucket %v\n", bucketName)
 		gcpbucket.PrintMetadata(ctx, client, bucketName)
+}
+
+func objectBench(ctx context.Context, client *storage.Client, id string) {
+
+	for {
+		file := getFile(upFilepath)
+		// defer file.Close()
+		loopObjectName := objectFolder + id + "/" + objectName + "_" + id + "_" + getFormattedTimeWithMs(time.Now()) + objectNameSuffix
+		fmt.Printf("upload object %v to bucket %v\n", loopObjectName, bucketName)
+		upObjectErr := gcpobject.Upload(ctx, client, bucketName, loopObjectName, file)
+		if upObjectErr != nil {
+			fmt.Printf("FAILED upload object %v to bucket %v: %v\n", loopObjectName, bucketName, upObjectErr.Error())
+		}
+		// time.Sleep(10 * time.Millisecond)
+		file.Close()
 	}
 }
 
@@ -119,4 +156,12 @@ func writeToFile(filepath string, data []byte) error {
 		return writeErr
 	}
 	return nil
+}
+
+func getFormattedTimeWithMs(time time.Time) string {
+	return strings.ReplaceAll(
+		strings.ReplaceAll(
+			time.Format("15:04:05.999999"), ":", "-",
+		), ".", "-",
+	)
 }
