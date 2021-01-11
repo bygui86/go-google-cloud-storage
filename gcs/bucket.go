@@ -29,16 +29,10 @@ func ListBuckets(ctx context.Context, client *storage.Client, projectId string) 
 
 func CreateBucket(ctx context.Context, client *storage.Client, projectId,
 	bucketName, storageClass, location string) error {
-
-	bucket := client.Bucket(bucketName)
-	err := bucket.Create(ctx, projectId, &storage.BucketAttrs{
+	return client.Bucket(bucketName).Create(ctx, projectId, &storage.BucketAttrs{
 		StorageClass: storageClass,
 		Location:     location,
 	})
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // EXIST
@@ -62,35 +56,39 @@ func PrintBucketMetadata(attrs *storage.BucketAttrs) {
 	fmt.Printf("Created: %v \n", attrs.Created)
 	fmt.Printf("MetaGeneration: %v \n", attrs.MetaGeneration)
 	fmt.Printf("PredefinedACL: %v \n", attrs.PredefinedACL)
+	fmt.Println("Encryption:")
 	if attrs.Encryption != nil {
-		fmt.Printf("Encryption: \n")
 		fmt.Printf("\tDefaultKmsKeyName: %v \n", attrs.Encryption.DefaultKMSKeyName)
 	}
+	fmt.Println("Website:")
 	if attrs.Website != nil {
-		fmt.Printf("Website: \n")
 		fmt.Printf("\tIndexPage: %v \n", attrs.Website.MainPageSuffix)
 		fmt.Printf("\tNotFoundPage: %v \n", attrs.Website.NotFoundPage)
 	}
 	fmt.Printf("DefaultEventBasedHold: %v \n", attrs.DefaultEventBasedHold)
+	fmt.Println("RetentionPolicy:")
 	if attrs.RetentionPolicy != nil {
-		fmt.Printf("RetentionPolicy: \n")
 		fmt.Printf("\tEffectiveTime: %v \n", attrs.RetentionPolicy.EffectiveTime)
 		fmt.Printf("\tRetentionPeriod: %v \n", attrs.RetentionPolicy.RetentionPeriod)
 		fmt.Printf("\tIsLocked: %v \n", attrs.RetentionPolicy.IsLocked)
 	}
 	fmt.Printf("RequesterPays: %v \n", attrs.RequesterPays)
 	fmt.Printf("VersioningEnabled: %v \n", attrs.VersioningEnabled)
+	fmt.Println("Logging:")
 	if attrs.Logging != nil {
-		fmt.Printf("Logging: \n")
 		fmt.Printf("\tLogBucket: %v \n", attrs.Logging.LogBucket)
 		fmt.Printf("\tLogObjectPrefix: %v \n", attrs.Logging.LogObjectPrefix)
 	}
+	fmt.Println("Labels:")
 	if attrs.Labels != nil {
-		fmt.Printf("Labels: \n")
 		for key, value := range attrs.Labels {
 			fmt.Printf("\t%v = %v \n", key, value)
 		}
 	}
 }
 
-// TODO DELETE
+// DELETE
+
+func DeleteBucket(ctx context.Context, client *storage.Client, bucketName string) error {
+	return client.Bucket(bucketName).Delete(ctx)
+}

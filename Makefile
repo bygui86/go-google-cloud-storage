@@ -11,10 +11,10 @@ export GO111MODULE = on
 # ACTIONS
 
 build :		## Build application
-	go build
+	@go build
 
-start :		## Run application from source code
-	godotenv -f local.env go run main.go
+run :		## Run application from source code
+	@godotenv -f local.env go run main.go
 
 
 ## helpers

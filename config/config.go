@@ -27,7 +27,7 @@ const (
 	gcsStorageClassDefault  = StandardStorageClass
 	gcsLocationDefault      = ""
 	uploadFilePathDefault   = ""
-	downloadFilePathDefault = ""
+	downloadFilePathDefault = "./"
 )
 
 func LoadConfig() *Config {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -43,7 +44,7 @@ func main() {
 		os.Exit(501)
 	}
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(1 * time.Second)
 }
 
 func performAction(ctx context.Context, cfg *config.Config) error {
@@ -72,10 +73,8 @@ func performBucketAction(ctx context.Context, cfg *config.Config) error {
 		err := gcs.CheckBucketExistence(ctx, gcsClient, cfg.GcsBucketName)
 		if err == nil {
 			fmt.Printf("Bucket %s found \n", cfg.GcsBucketName)
-		} else {
-			fmt.Printf("Bucket %s not found \n", cfg.GcsBucketName)
 		}
-		return nil
+		return err
 	case config.InfoAction:
 		fmt.Printf("Get info about bucket %s \n", cfg.GcsBucketName)
 		attrs, err := gcs.GetBucketMetadata(ctx, gcsClient, cfg.GcsBucketName)
@@ -84,8 +83,9 @@ func performBucketAction(ctx context.Context, cfg *config.Config) error {
 		}
 		gcs.PrintBucketMetadata(attrs)
 		return nil
-	// case config.DeleteAction:
-	// 	return nil
+	case config.DeleteAction:
+		fmt.Printf("Delete bucket %s \n", cfg.GcsBucketName)
+		return gcs.DeleteBucket(ctx, gcsClient, cfg.GcsBucketName)
 	default:
 		return fmt.Errorf("unknown bucket action %s", cfg.Level)
 	}
@@ -108,22 +108,22 @@ func performObjectAction(ctx context.Context, cfg *config.Config) error {
 		}
 		return upErr
 	case config.DownloadAction:
+		filename := preapreDownloadFilename(cfg.GcsObjectName)
+		path := prepareDownloadPath(cfg.DownloadFilePath, filename)
 		fmt.Printf("Download object %s from bucket %s to file %s \n",
-			cfg.GcsObjectName, cfg.GcsBucketName, cfg.DownloadFilePath)
+			cfg.GcsObjectName, cfg.GcsBucketName, path)
 		data, downErr := gcs.DownloadObject(ctx, gcsClient, cfg.GcsBucketName, cfg.GcsObjectName)
 		if downErr != nil {
 			return downErr
 		}
-		return utils.WriteToFile(cfg.DownloadFilePath, data)
+		return utils.WriteToFile(path, data)
 	case config.ExistAction:
 		fmt.Printf("Check if object %s exists in bucket %s \n", cfg.GcsObjectName, cfg.GcsBucketName)
 		err := gcs.CheckObjectExistence(ctx, gcsClient, cfg.GcsBucketName, cfg.GcsObjectName)
 		if err == nil {
 			fmt.Printf("Object %s found in bucket %s \n", cfg.GcsObjectName, cfg.GcsBucketName)
-		} else {
-			fmt.Printf("Object %s not found in bucket %s \n", cfg.GcsObjectName, cfg.GcsBucketName)
 		}
-		return nil
+		return err
 	case config.InfoAction:
 		fmt.Printf("Get info about object %s in bucket %s \n", cfg.GcsObjectName, cfg.GcsBucketName)
 		attrs, err := gcs.GetObjectMetadata(ctx, gcsClient, cfg.GcsBucketName, cfg.GcsObjectName)
@@ -138,4 +138,16 @@ func performObjectAction(ctx context.Context, cfg *config.Config) error {
 	default:
 		return fmt.Errorf("unknown object action %s", cfg.Level)
 	}
+}
+
+func prepareDownloadPath(path, filename string) string {
+	if path[len(path)-1:] == "/" {
+		return path + filename
+	} else {
+		return path + "/" + filename
+	}
+}
+
+func preapreDownloadFilename(filename string) string {
+	return strings.ReplaceAll(filename, "/", "___")
 }

@@ -103,7 +103,7 @@ func PrintObjectMetadata(attrs *storage.ObjectAttrs) {
 	fmt.Printf("Event-based hold enabled? %t\n", attrs.EventBasedHold)
 	fmt.Printf("Temporary hold enabled? %t\n", attrs.TemporaryHold)
 	fmt.Printf("Retention expiration time %v \n", attrs.RetentionExpirationTime)
-	fmt.Print("Metadata: \n")
+	fmt.Println("Metadata:")
 	for key, value := range attrs.Metadata {
 		fmt.Printf("\t%v = %v \n", key, value)
 	}

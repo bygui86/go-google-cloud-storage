@@ -57,4 +57,5 @@ Thumbs.db
 *.out
 
 ########### Project specific
+*.json
 go-google-cloud-storage
