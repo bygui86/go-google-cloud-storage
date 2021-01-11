@@ -3,165 +3,139 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/bygui86/go-google-cloud-storage/gcpbucket"
-	"github.com/bygui86/go-google-cloud-storage/gcpclient"
-	"github.com/bygui86/go-google-cloud-storage/gcpobject"
-	"github.com/pkg/profile"
+	"github.com/bygui86/multi-profile/v2"
+
+	"github.com/bygui86/go-google-cloud-storage/config"
+	"github.com/bygui86/go-google-cloud-storage/gcs"
+	"github.com/bygui86/go-google-cloud-storage/utils"
 )
 
-const (
-	projectId  = "gcp-sample-project"
-	bucketName = "golang-tests"
-	objectName = "notes-test.txt"
-
-	storageClassStd  = "STANDARD"
-	storageClassNear = "NEARLINE"
-	storageClassCold = "COLDLINE"
-
-	locationEu        = "europe"
-	locationUs        = "us"
-	locationAs        = "asia"
-	locationUsCentral = "us-central1"
-
-	upFilepath   = "notes_up.txt"
-	downFilepath = "notes_down.txt"
-)
+var gcsClient *storage.Client
 
 func main() {
+	cfg := config.LoadConfig()
 
-	// PROFILING
-	// defer profile.Start(profile.CPUProfile, profile.ProfilePath(".")).Stop()
-	// defer profile.Start(profile.MemProfile, profile.ProfilePath(".")).Stop()
-	memProf := profile.Start(profile.MemProfile, profile.ProfilePath("."))
-	// defer profile.Start(profile.ThreadcreationProfile, profile.ProfilePath(".")).Stop()
-	// defer profile.Start(profile.TraceProfile, profile.ProfilePath(".")).Stop()
-	// defer profile.Start(profile.NoShutdownHook, profile.ProfilePath(".")).Stop()
-	// defer profile.Start(profile.MutexProfile, profile.ProfilePath(".")).Stop()
-	// defer profile.Start(profile.BlockProfile, profile.ProfilePath(".")).Stop()
-	// defer profile.Start(profile.BlockProfile, profile.ProfilePath(".")).Stop()
+	if cfg.EnableProfiling {
+		defer profile.CPUProfile(&profile.Config{}).Start().Stop()
+		defer profile.MemProfile(&profile.Config{}).Start().Stop()
+		defer profile.GoroutineProfile(&profile.Config{}).Start().Stop()
+	}
 
-	// setup context
-	fmt.Printf("*** setup context\n")
+	fmt.Println("Setup context")
 	ctx := context.Background()
 
-	// create client
-	fmt.Printf("*** create client\n")
-	client := gcpclient.New(ctx)
+	fmt.Println("New GCP client")
+	var clientErr error
+	gcsClient, clientErr = gcs.NewClient(ctx)
+	if clientErr != nil {
+		fmt.Printf("ERROR - GCP new client creation failed: %s \n", clientErr.Error())
+		os.Exit(501)
+	}
+	defer gcs.CloseClient(gcsClient)
 
-	if client != nil {
-		// Closing the client safely cleans up background resources.
-		defer client.Close()
-
-		bucketActions(ctx, client)
-		// objectActions(ctx, client)
-
-		go objectBench(ctx, client, "1")
-		go objectBench(ctx, client, "2")
-		go objectBench(ctx, client, "3")
+	actionErr := performAction(ctx, cfg)
+	if actionErr != nil {
+		fmt.Printf("ERROR - Action failed: %s \n", actionErr.Error())
+		os.Exit(501)
 	}
 
-	time.Sleep(60 * time.Second)
-
-	memProf.Stop()
+	time.Sleep(3 * time.Second)
 }
 
-func bucketActions(ctx context.Context, client *storage.Client) {
-
-	// list all buckets in project
-	fmt.Printf("*** list buckects in project %v\n", projectId)
-	gcpbucket.List(ctx, client, projectId)
-
-	// check bucket existance
-	var bucketErr error
-	fmt.Printf("*** check existance of bucket %v\n", bucketName)
-	if !gcpbucket.CheckExistance(ctx, client, bucketName) {
-		fmt.Printf("*** bucket %v does not exist\n", bucketName)
-		// create a bucket
-		fmt.Printf("*** create bucket %v\n", bucketName)
-		bucketErr = gcpbucket.Create(ctx, client, projectId, bucketName, storageClassStd, locationUs)
+func performAction(ctx context.Context, cfg *config.Config) error {
+	switch cfg.Level {
+	case config.BucketLevel:
+		return performBucketAction(ctx, cfg)
+	case config.ObjectLevel:
+		return performObjectAction(ctx, cfg)
+	default:
+		return fmt.Errorf("unknown level %s", cfg.Level)
 	}
-
-	if bucketErr == nil {
-		// describe a bucket
-		fmt.Printf("*** describe bucket %v\n", bucketName)
-		gcpbucket.PrintMetadata(ctx, client, bucketName)
 }
 
-func objectBench(ctx context.Context, client *storage.Client, id string) {
-
-	for {
-		file := getFile(upFilepath)
-		// defer file.Close()
-		loopObjectName := objectFolder + id + "/" + objectName + "_" + id + "_" + getFormattedTimeWithMs(time.Now()) + objectNameSuffix
-		fmt.Printf("upload object %v to bucket %v\n", loopObjectName, bucketName)
-		upObjectErr := gcpobject.Upload(ctx, client, bucketName, loopObjectName, file)
-		if upObjectErr != nil {
-			fmt.Printf("FAILED upload object %v to bucket %v: %v\n", loopObjectName, bucketName, upObjectErr.Error())
+func performBucketAction(ctx context.Context, cfg *config.Config) error {
+	fmt.Println("Perform BUCKET action")
+	switch cfg.Action {
+	case config.ListAction:
+		fmt.Printf("List buckets in project %s \n", cfg.GcpProjectId)
+		return gcs.ListBuckets(ctx, gcsClient, cfg.GcpProjectId)
+	case config.CreateAction:
+		fmt.Printf("Create bucket %s in project %s \n", cfg.GcsBucketName, cfg.GcpProjectId)
+		return gcs.CreateBucket(ctx, gcsClient, cfg.GcpProjectId,
+			cfg.GcsBucketName, string(cfg.GcsStorageClass), cfg.GcsLocation)
+	case config.ExistAction:
+		fmt.Printf("Check if bucket %s exists \n", cfg.GcsBucketName)
+		err := gcs.CheckBucketExistence(ctx, gcsClient, cfg.GcsBucketName)
+		if err == nil {
+			fmt.Printf("Bucket %s found \n", cfg.GcsBucketName)
+		} else {
+			fmt.Printf("Bucket %s not found \n", cfg.GcsBucketName)
 		}
-		// time.Sleep(10 * time.Millisecond)
-		file.Close()
-	}
-}
-
-func objectActions(ctx context.Context, client *storage.Client) {
-
-	// list all objects in bucket
-	fmt.Printf("*** list objects in bucket %v\n", bucketName)
-	gcpobject.List(ctx, client, bucketName)
-
-	// check object existance
-	var upObjectErr error
-	fmt.Printf("*** check existance of object %v in bucket %v\n", objectName, bucketName)
-	if !gcpobject.CheckExistance(ctx, client, bucketName, objectName) {
-		// upload an object
-		file := getFile(upFilepath)
-		defer file.Close()
-		fmt.Printf("*** upload object %v to bucket %v\n", objectName, bucketName)
-		upObjectErr = gcpobject.Upload(ctx, client, bucketName, objectName, file)
-	}
-	if upObjectErr == nil {
-		// describe a object
-		// fmt.Printf("*** describe object %v in bucket %v\n", objectName, bucketName)
-		// gcpobject.PrintMetadata(ctx, client, bucketName, objectName)
-
-		// download an object
-		fmt.Printf("*** download object %v from bucket %v\n", objectName, bucketName)
-		data, downObjectErr := gcpobject.Download(ctx, client, bucketName, objectName)
-		if downObjectErr == nil {
-			writeToFile(downFilepath, data)
-		}
-	}
-}
-
-func getFile(filepath string) *os.File {
-
-	f, err := os.Open(filepath)
-	if err != nil {
 		return nil
+	case config.InfoAction:
+		fmt.Printf("Get info about bucket %s \n", cfg.GcsBucketName)
+		attrs, err := gcs.GetBucketMetadata(ctx, gcsClient, cfg.GcsBucketName)
+		if err != nil {
+			return err
+		}
+		gcs.PrintBucketMetadata(attrs)
+		return nil
+	// case config.DeleteAction:
+	// 	return nil
+	default:
+		return fmt.Errorf("unknown bucket action %s", cfg.Level)
 	}
-	return f
 }
 
-func writeToFile(filepath string, data []byte) error {
-
-	writeErr := ioutil.WriteFile(filepath, data, 0644)
-	if writeErr != nil {
-		fmt.Printf("Failed to write data to file %v: %v", filepath, writeErr.Error())
-		return writeErr
+func performObjectAction(ctx context.Context, cfg *config.Config) error {
+	fmt.Println("Perform OBJECT action")
+	switch cfg.Action {
+	case config.ListAction:
+		fmt.Printf("List objects in bucket %s \n", cfg.GcsBucketName)
+		return gcs.ListObjects(ctx, gcsClient, cfg.GcsBucketName)
+	case config.UploadAction:
+		fmt.Printf("Upload file %s as object %s to bucket %s \n",
+			cfg.UploadFilePath, cfg.GcsObjectName, cfg.GcsBucketName)
+		file := utils.GetFile(cfg.UploadFilePath)
+		upErr := gcs.UploadObject(ctx, gcsClient, cfg.GcsBucketName, cfg.GcsObjectName, file)
+		readErr := file.Close()
+		if readErr != nil {
+			fmt.Printf("ERROR - File reader closing failed: %s \n", readErr.Error())
+		}
+		return upErr
+	case config.DownloadAction:
+		fmt.Printf("Download object %s from bucket %s to file %s \n",
+			cfg.GcsObjectName, cfg.GcsBucketName, cfg.DownloadFilePath)
+		data, downErr := gcs.DownloadObject(ctx, gcsClient, cfg.GcsBucketName, cfg.GcsObjectName)
+		if downErr != nil {
+			return downErr
+		}
+		return utils.WriteToFile(cfg.DownloadFilePath, data)
+	case config.ExistAction:
+		fmt.Printf("Check if object %s exists in bucket %s \n", cfg.GcsObjectName, cfg.GcsBucketName)
+		err := gcs.CheckObjectExistence(ctx, gcsClient, cfg.GcsBucketName, cfg.GcsObjectName)
+		if err == nil {
+			fmt.Printf("Object %s found in bucket %s \n", cfg.GcsObjectName, cfg.GcsBucketName)
+		} else {
+			fmt.Printf("Object %s not found in bucket %s \n", cfg.GcsObjectName, cfg.GcsBucketName)
+		}
+		return nil
+	case config.InfoAction:
+		fmt.Printf("Get info about object %s in bucket %s \n", cfg.GcsObjectName, cfg.GcsBucketName)
+		attrs, err := gcs.GetObjectMetadata(ctx, gcsClient, cfg.GcsBucketName, cfg.GcsObjectName)
+		if err != nil {
+			return err
+		}
+		gcs.PrintObjectMetadata(attrs)
+		return nil
+	case config.DeleteAction:
+		fmt.Printf("Delete object %s from bucket %s \n", cfg.GcsObjectName, cfg.GcsBucketName)
+		return gcs.DeleteObject(ctx, gcsClient, cfg.GcsBucketName, cfg.GcsObjectName)
+	default:
+		return fmt.Errorf("unknown object action %s", cfg.Level)
 	}
-	return nil
-}
-
-func getFormattedTimeWithMs(time time.Time) string {
-	return strings.ReplaceAll(
-		strings.ReplaceAll(
-			time.Format("15:04:05.999999"), ":", "-",
-		), ".", "-",
-	)
 }
